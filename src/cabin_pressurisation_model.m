@@ -71,7 +71,7 @@ for scen_id = 1:4
             SCEN_CASE.name = "SCEN-01: Normal Operation";
             SCEN_CASE.sensorFault = false;
             SCEN_CASE.sensorFaultStart_sec = inf;
-            SCEN_CASE.cabinClimbRate_ftps = 10;
+            SCEN_CASE.cabinClimbRate_ftps = 12;
             SCEN_CASE.maxDiffPressure_psi = 8.5;
             SCEN_CASE.isNominal = true;
 
@@ -79,7 +79,7 @@ for scen_id = 1:4
             SCEN_CASE.name = "SCEN-02: Sensor Fault";
             SCEN_CASE.sensorFault = true;          % sensor fault triggered
             SCEN_CASE.sensorFaultStart_sec = 200;
-            SCEN_CASE.cabinClimbRate_ftps = 10;
+            SCEN_CASE.cabinClimbRate_ftps = 12;
             SCEN_CASE.maxDiffPressure_psi = 8.5;
             SCEN_CASE.isNominal = false;
 
@@ -95,7 +95,7 @@ for scen_id = 1:4
             SCEN_CASE.name = "SCEN-04: Reduced Pressure Limit";
             SCEN_CASE.sensorFault = false;
             SCEN_CASE.sensorFaultStart_sec = inf;   % no sensor fault
-            SCEN_CASE.cabinClimbRate_ftps = 10;
+            SCEN_CASE.cabinClimbRate_ftps = 12;
             SCEN_CASE.maxDiffPressure_psi = 5.0;    % stricter safety constraint
             SCEN_CASE.isNominal = false;
     end
