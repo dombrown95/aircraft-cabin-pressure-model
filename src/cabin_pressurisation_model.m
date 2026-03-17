@@ -53,7 +53,7 @@ SCEN.pRandomFailurePerSec = 0.0;         % nominal run = 0
 %% ==========================================================
 %  SECTION C — SIMULATION SETTINGS
 %  ==========================================================
-SIM.N = 5;
+SIM.N = 1;
 SIM.dt = 1.0;            % seconds
 SIM.maxTime_sec = 1200;  % simulation cap
 
@@ -69,22 +69,32 @@ for scen_id = 1:4
         case 1
             SCEN_CASE.name = "SCEN-01: Normal Operation";
             SCEN_CASE.sensorFault = false;
+            SCEN_CASE.sensorFaultStart_sec = inf;
             SCEN_CASE.cabinClimbRate_ftps = 10;
             SCEN_CASE.maxDiffPressure_psi = 8.5;
+            SCEN_CASE.isNominal = true;
 
         case 2
             SCEN_CASE.name = "SCEN-02: Sensor Fault";
-            SCEN_CASE.sensorFault = true;
+            SCEN_CASE.sensorFault = true;           % sensor fault triggered
+            SCEN_CASE.sensorFaultStart_sec = 200;
+            SCEN_CASE.isNominal = false;
 
         case 3
             SCEN_CASE.name = "SCEN-03: Slow Cabin Response";
             SCEN_CASE.sensorFault = false;
-            SCEN_CASE.cabinClimbRate_ftps = 4;
+            SCEN_CASE.sensorFaultStart_sec = inf;   % no fault triggered
+            SCEN_CASE.cabinClimbRate_ftps = 4;      % slower pressurisation
+            SCEN_CASE.maxDiffPressure_psi = 8.5;    
+            SCEN_CASE.isNominal = false;
 
         case 4
             SCEN_CASE.name = "SCEN-04: Reduced Pressure Limit";
             SCEN_CASE.sensorFault = false;
-            SCEN_CASE.maxDiffPressure_psi = 5.0;
+            SCEN_CASE.sensorFaultStart_sec = inf;   % no sensor fault
+            SCEN_CASE.cabinClimbRate_ftps = 10;
+            SCEN_CASE.maxDiffPressure_psi = 5.0;    % stricter safety constraint
+            SCEN_CASE.isNominal = false;
     end
 
     out = runSimulation(SCEN_CASE, SIM);
@@ -94,7 +104,7 @@ for scen_id = 1:4
     evidence.IsCruise = double(out.isCruise(end));
     evidence.FaultOnTimeout = double(out.faultOnTimeout(end));
     evidence.MaxDiffPressureSafe = double(out.maxDiffPressure_psi(end) <= SCEN_CASE.maxDiffPressure_psi);
-    evidence.SensorFaultDetected = double(SCEN_CASE.sensorFault && ~out.isCruise(end));
+    evidence.SensorFaultDetected = double(SCEN_CASE.sensorFault && out.stateLog(end) == "FAULT");
 
     %% ==========================================================
     %  SECTION E — VERIFY REQUIREMENTS
@@ -109,7 +119,7 @@ for scen_id = 1:4
     disp("=== Verification Matrix ===");
     disp(V);
 
-        figure('Name', sprintf('Simulation Results - %s', SCEN_CASE.name), ...
+    figure('Name', sprintf('Simulation Results - %s', SCEN_CASE.name), ...
            'Position', [100+(scen_id*40), 100+(scen_id*40), 1000, 450]);
 
     subplot(2,2,1);
@@ -151,16 +161,6 @@ for scen_id = 1:4
         evidence.IsCruise, evidence.FaultOnTimeout, evidence.MaxDiffPressureSafe, evidence.SensorFaultDetected);
 
 end
-
-%% ==========================================================
-%  OPTIONAL MINI REPORT
-%  ==========================================================
-fprintf("\n--- Mini MBSE Report ---\n");
-fprintf("Scenario: %s\n", SCEN.name);
-fprintf("Runs: %d | dt: %.2f sec\n", SIM.N, SIM.dt);
-fprintf("Example evidence used for verification: last run\n");
-fprintf("TimeToCruise_sec: %.2f | IsCruise: %d | FaultOnTimeout: %d | MaxDiffPressureSafe: %d\n", ...
-    evidence.TimeToCruise_sec, evidence.IsCruise, evidence.FaultOnTimeout, evidence.MaxDiffPressureSafe);
 
 %% ==========================================================
 %  Local Functions
