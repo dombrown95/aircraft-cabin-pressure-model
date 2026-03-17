@@ -110,6 +110,41 @@ for scen_id = 1:4
     disp("=== Verification Matrix ===");
     disp(V);
 
+        figure('Name', sprintf('Simulation Results - %s', SCEN_CASE.name), ...
+           'Position', [100+(scen_id*40), 100+(scen_id*40), 1000, 450]);
+
+    subplot(2,2,1);
+    plot(out.timeLog, out.aircraftAltLog, 'LineWidth', 1.5); hold on;
+    plot(out.timeLog, out.cabinAltLog, 'LineWidth', 1.5);
+    xlabel('Time (sec)');
+    ylabel('Altitude (ft)');
+    title(sprintf('Altitude Profile (%s)', SCEN_CASE.name));
+    legend('Aircraft Altitude', 'Cabin Altitude', 'Location', 'northwest');
+    grid on;
+
+    subplot(2,2,3);
+    plot(out.timeLog, out.diffPressureLog, 'LineWidth', 1.5); hold on;
+    yline(SCEN_CASE.maxDiffPressure_psi, '--', 'Pressure Limit');
+    xlabel('Time (sec)');
+    ylabel('Differential Pressure (psi)');
+    title('Differential Pressure');
+    grid on;
+
+    subplot(2,2,[2 4]);
+    stateNumeric = zeros(size(out.stateLog));
+    stateNumeric(out.stateLog == "GROUND") = 0;
+    stateNumeric(out.stateLog == "PRESSURISING") = 1;
+    stateNumeric(out.stateLog == "CRUISE") = 2;
+    stateNumeric(out.stateLog == "FAULT") = 3;
+
+    plot(out.timeLog, stateNumeric, 'LineWidth', 2);
+    yticks([0 1 2 3]);
+    yticklabels({'GROUND','PRESSURISING','CRUISE','FAULT'});
+    xlabel('Time (sec)');
+    title('State Transitions');
+    ylim([-0.5 3.5]);
+    grid on;
+
 end
 
 %% ==========================================================
@@ -154,13 +189,31 @@ function out = runSimulation(scen, SIM)
     out.faultOnTimeout = false(N,1);
     out.maxDiffPressure_psi = nan(N,1);
 
+    % Keep final run logs for plotting
+    out.timeLog = [];
+    out.aircraftAltLog = [];
+    out.cabinAltLog = [];
+    out.diffPressureLog = [];
+    out.stateLog = [];
+
     for i = 1:N
-        [out.isCruise(i), out.timeToCruise_sec(i), out.faultOnTimeout(i), out.maxDiffPressure_psi(i)] = ...
-            simulateOneRun(scen, SIM.dt, SIM.maxTime_sec);
+        [out.isCruise(i), out.timeToCruise_sec(i), out.faultOnTimeout(i), ...
+         out.maxDiffPressure_psi(i), timeLog, aircraftAltLog, cabinAltLog, ...
+         diffPressureLog, stateLog] = simulateOneRun(scen, SIM.dt, SIM.maxTime_sec);
+
+        if i == N
+            out.timeLog = timeLog;
+            out.aircraftAltLog = aircraftAltLog;
+            out.cabinAltLog = cabinAltLog;
+            out.diffPressureLog = diffPressureLog;
+            out.stateLog = stateLog;
+        end
     end
 end
 
-function [isCruise, timeToCruise_sec, faultOnTimeout, maxDiffPressure_psi] = simulateOneRun(scen, dt, maxTime_sec)
+function [isCruise, timeToCruise_sec, faultOnTimeout, maxDiffPressure_psi, ...
+          timeLog, aircraftAltLog, cabinAltLog, diffPressureLog, stateLog] = ...
+          simulateOneRun(scen, dt, maxTime_sec)
 
     state = "GROUND";
     t = 0;
@@ -175,17 +228,24 @@ function [isCruise, timeToCruise_sec, faultOnTimeout, maxDiffPressure_psi] = sim
     aircraftClimbRate = max(1, scen.aircraftClimbRate_ftps + randn * scen.stdAircraftClimbRate_ftps);
     cabinClimbRate = max(1, scen.cabinClimbRate_ftps + randn * scen.stdCabinClimbRate_ftps);
 
+    steps = floor(maxTime_sec / dt) + 1;
+    timeLog = zeros(steps,1);
+    aircraftAltLog = zeros(steps,1);
+    cabinAltLog = zeros(steps,1);
+    diffPressureLog = zeros(steps,1);
+    stateLog = strings(steps,1);
+
+    idx = 1;
+
     while t < maxTime_sec
-        % Random fault hazard
+        % Random fault hazard  
         if rand < scen.pRandomFailurePerSec * dt
             state = "FAULT";
-            break;
         end
 
         % Sensor fault
         if scen.sensorFault
             state = "FAULT";
-            break;
         end
 
         % Aircraft climbs until cruise altitude
@@ -212,32 +272,42 @@ function [isCruise, timeToCruise_sec, faultOnTimeout, maxDiffPressure_psi] = sim
                 % Safety check
                 if diffPressure_psi > scen.maxDiffPressure_psi
                     state = "FAULT";
-                    break;
-                end
-
                 % Cruise condition
-                if aircraftAlt_ft >= scen.cruiseAircraftAlt_ft && ...
-                   abs(cabinAlt_ft - scen.targetCabinAlt_ft) <= 100
+                elseif aircraftAlt_ft >= scen.cruiseAircraftAlt_ft && ...
+                       abs(cabinAlt_ft - scen.targetCabinAlt_ft) <= 100
                     state = "CRUISE";
-                    break;
-                end
-
-                % Timeout check
-                if t >= scen.timeout_sec
+                % Timeout condition
+                elseif t >= scen.timeout_sec
                     state = "FAULT";
                     faultOnTimeout = true;
-                    break;
                 end
 
             case "CRUISE"
-                break;
+                % Hold state
 
             case "FAULT"
-                break;
+                % Hold state
+        end
+
+        timeLog(idx) = t;
+        aircraftAltLog(idx) = aircraftAlt_ft;
+        cabinAltLog(idx) = cabinAlt_ft;
+        diffPressureLog(idx) = diffPressure_psi;
+        stateLog(idx) = state;
+
+        if state == "CRUISE" || state == "FAULT"
+            break;
         end
 
         t = t + dt;
+        idx = idx + 1;
     end
+
+    timeLog = timeLog(1:idx);
+    aircraftAltLog = aircraftAltLog(1:idx);
+    cabinAltLog = cabinAltLog(1:idx);
+    diffPressureLog = diffPressureLog(1:idx);
+    stateLog = stateLog(1:idx);
 
     isCruise = (state == "CRUISE");
     timeToCruise_sec = t;
