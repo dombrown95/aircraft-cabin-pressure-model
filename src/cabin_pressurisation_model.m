@@ -64,6 +64,22 @@ SIM.maxTime_sec = 1200;
 %  ==========================================================
 out = runSimulation(SCEN, SIM);
 
+evidence = struct();
+evidence.TimeToCruise_sec = out.timeToCruise_sec(end);
+evidence.IsCruise = double(out.isCruise(end));
+evidence.FaultOnTimeout = double(out.faultOnTimeout(end));
+evidence.MaxDiffPressureSafe = double(out.maxDiffPressure_psi(end) <= SCEN.maxDiffPressure_psi);
+
+%% ==========================================================
+%  SECTION E — VERIFY REQUIREMENTS
+%  ==========================================================
+V = verifyRequirements(REQ, evidence);
+
+disp("=== Evidence ===");
+disp(struct2table(evidence));
+disp("=== Verification Matrix ===");
+disp(V);
+
 %% ==========================================================
 %  Local Functions
 %  ==========================================================
@@ -158,4 +174,45 @@ function [isCruise, timeToCruise_sec, faultOnTimeout, maxDiffPressure_psi] = sim
 
     isCruise = (state == "CRUISE");
     timeToCruise_sec = t;
+end
+
+function V = verifyRequirements(REQ, evidence)
+    n = height(REQ);
+
+    Observed = strings(n,1);
+    Pass = false(n,1);
+
+    for i = 1:n
+        metricName = REQ.Metric{i};
+
+        if ~isfield(evidence, metricName)
+            Observed(i) = "MISSING_METRIC";
+            Pass(i) = false;
+            continue;
+        end
+
+        obs = evidence.(metricName);
+        Observed(i) = string(obs);
+
+        op = REQ.Operator{i};
+        thr = REQ.Threshold(i);
+
+        switch op
+            case "<="
+                Pass(i) = (obs <= thr);
+            case "<"
+                Pass(i) = (obs < thr);
+            case ">="
+                Pass(i) = (obs >= thr);
+            case ">"
+                Pass(i) = (obs > thr);
+            case "=="
+                Pass(i) = (obs == thr);
+            otherwise
+                Pass(i) = false;
+        end
+    end
+
+    V = table(REQ.ID, REQ.Statement, REQ.Metric, Observed, REQ.Operator, REQ.Threshold, Pass, REQ.Scope, REQ.Notes, ...
+        'VariableNames', {'ReqID','Statement','Metric','Observed','Operator','Threshold','Pass','Scope','Notes'});
 end
