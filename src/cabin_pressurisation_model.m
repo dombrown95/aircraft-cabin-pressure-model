@@ -9,14 +9,14 @@ rng(42); % reproducibility
 %  ==========================================================
 REQ = table( ...
     ["REQ-01"; "REQ-02"; "REQ-03"; "REQ-04"; "REQ-05"], ...
-    ["The cabin pressurisation system shall reach CRUISE mode within 900 seconds."; ...
+    ["The cabin pressurisation system shall reach CRUISE mode within 750 seconds."; ...
      "The cabin pressurisation system shall end in CRUISE mode under nominal conditions."; ...
      "The system shall not exceed the maximum differential pressure limit under nominal conditions."; ...
      "The system shall declare FAULT when sensor data is unavailable."; ...
      "The system shall declare FAULT if cruise conditions are not achieved within the timeout."], ...
     ["TimeToCruise_sec"; "IsCruise"; "MaxDiffPressureSafe"; "SensorFaultDetected"; "FaultOnTimeout"], ...
     ["<="; "=="; "=="; "=="; "=="], ...
-    [900; 1; 1; 1; 1], ...
+    [750; 1; 1; 1; 1], ...
     ["SingleRun"; "SingleRun"; "SingleRun"; "SingleRun"; "SingleRun"], ...
     ["Performance"; "Functional"; "Safety"; "Fault handling"; "Timeout protection"], ...
     'VariableNames', {'ID','Statement','Metric','Operator','Threshold','Scope','Notes'} ...
@@ -40,7 +40,7 @@ SCEN.cabinClimbRate_ftps = 10;           % cabin altitude changes more slowly th
 % Safety / logic
 SCEN.maxDiffPressure_psi = 8.5;          % maximum allowable differential pressure
 SCEN.psiPerFt = 0.00025;                 % simplified conversion from altitude difference to psi
-SCEN.timeout_sec = 900;                  % timeout for reaching cruise mode
+SCEN.timeout_sec = 750;                  % timeout for reaching cruise mode
 
 % Variability controls (deterministic)
 SCEN.stdAircraftClimbRate_ftps = 0.0;
@@ -76,8 +76,10 @@ for scen_id = 1:4
 
         case 2
             SCEN_CASE.name = "SCEN-02: Sensor Fault";
-            SCEN_CASE.sensorFault = true;           % sensor fault triggered
+            SCEN_CASE.sensorFault = true;          % sensor fault triggered
             SCEN_CASE.sensorFaultStart_sec = 200;
+            SCEN_CASE.cabinClimbRate_ftps = 10;
+            SCEN_CASE.maxDiffPressure_psi = 8.5;
             SCEN_CASE.isNominal = false;
 
         case 3
@@ -104,7 +106,8 @@ for scen_id = 1:4
     evidence.IsCruise = double(out.isCruise(end));
     evidence.FaultOnTimeout = double(out.faultOnTimeout(end));
     evidence.MaxDiffPressureSafe = double(out.maxDiffPressure_psi(end) <= SCEN_CASE.maxDiffPressure_psi);
-    evidence.SensorFaultDetected = double(SCEN_CASE.sensorFault && out.stateLog(end) == "FAULT");
+    evidence.SensorFaultDetected = double(SCEN_CASE.sensorFault && out.finalState == "FAULT");
+    evidence.FinalState = out.finalState;
 
     %% ==========================================================
     %  SECTION E — VERIFY REQUIREMENTS
@@ -157,6 +160,7 @@ for scen_id = 1:4
     fprintf("\n--- Scenario Summary ---\n");
     fprintf("Scenario: %s\n", SCEN_CASE.name);
     fprintf("TimeToCruise_sec: %.2f\n", evidence.TimeToCruise_sec);
+    fprintf("FinalState: %s\n", evidence.FinalState);
     fprintf("IsCruise: %d | FaultOnTimeout: %d | MaxDiffPressureSafe: %d | SensorFaultDetected: %d\n\n", ...
         evidence.IsCruise, evidence.FaultOnTimeout, evidence.MaxDiffPressureSafe, evidence.SensorFaultDetected);
 
@@ -172,6 +176,7 @@ function out = runSimulation(scen, SIM)
     out.isCruise = false(N,1);
     out.faultOnTimeout = false(N,1);
     out.maxDiffPressure_psi = nan(N,1);
+    out.finalState = "";
 
     % Keep final run logs for plotting
     out.timeLog = [];
@@ -183,7 +188,7 @@ function out = runSimulation(scen, SIM)
     for i = 1:N
         [out.isCruise(i), out.timeToCruise_sec(i), out.faultOnTimeout(i), ...
          out.maxDiffPressure_psi(i), timeLog, aircraftAltLog, cabinAltLog, ...
-         diffPressureLog, stateLog] = simulateOneRun(scen, SIM.dt, SIM.maxTime_sec);
+         diffPressureLog, stateLog, finalState] = simulateOneRun(scen, SIM.dt, SIM.maxTime_sec);
 
         if i == N
             out.timeLog = timeLog;
@@ -191,12 +196,13 @@ function out = runSimulation(scen, SIM)
             out.cabinAltLog = cabinAltLog;
             out.diffPressureLog = diffPressureLog;
             out.stateLog = stateLog;
+            out.finalState = finalState;
         end
     end
 end
 
 function [isCruise, timeToCruise_sec, faultOnTimeout, maxDiffPressure_psi, ...
-          timeLog, aircraftAltLog, cabinAltLog, diffPressureLog, stateLog] = ...
+          timeLog, aircraftAltLog, cabinAltLog, diffPressureLog, stateLog, finalState] = ...
           simulateOneRun(scen, dt, maxTime_sec)
 
     state = "GROUND";
@@ -222,7 +228,7 @@ function [isCruise, timeToCruise_sec, faultOnTimeout, maxDiffPressure_psi, ...
     idx = 1;
 
     while t < maxTime_sec
-        % Random fault hazard  
+        % Random fault hazard
         if rand < scen.pRandomFailurePerSec * dt
             state = "FAULT";
         end
@@ -293,6 +299,7 @@ function [isCruise, timeToCruise_sec, faultOnTimeout, maxDiffPressure_psi, ...
     diffPressureLog = diffPressureLog(1:idx);
     stateLog = stateLog(1:idx);
 
+    finalState = state;
     isCruise = (state == "CRUISE");
     timeToCruise_sec = t;
 end
