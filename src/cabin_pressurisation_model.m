@@ -153,27 +153,6 @@ for scen_id = 1:4
 end
 
 %% ==========================================================
-%  SECTION F — PLOTS
-%  ==========================================================
-figure;
-plot(out.timeToCruise_sec, '-o');
-xlabel('Run #');
-ylabel('Time To Cruise (sec)');
-title('Time to Reach Cruise Mode Across Runs');
-
-figure;
-bar(out.isCruise);
-xlabel('Run #');
-ylabel('IsCruise (1=true)');
-title('End State CRUISE Across Runs');
-
-figure;
-plot(out.maxDiffPressure_psi, '-o');
-xlabel('Run #');
-ylabel('Maximum Differential Pressure (psi)');
-title('Maximum Differential Pressure Across Runs');
-
-%% ==========================================================
 %  OPTIONAL MINI REPORT
 %  ==========================================================
 fprintf("\n--- Mini MBSE Report ---\n");
