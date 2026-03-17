@@ -227,8 +227,8 @@ function [isCruise, timeToCruise_sec, faultOnTimeout, maxDiffPressure_psi, ...
             state = "FAULT";
         end
 
-        % Sensor fault
-        if scen.sensorFault
+        % Sensor fault (triggered only after the configured start time)
+        if scen.sensorFault && t >= scen.sensorFaultStart_sec
             state = "FAULT";
         end
 
