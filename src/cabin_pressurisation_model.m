@@ -60,25 +60,57 @@ SIM.dt = 1.0;            % seconds
 SIM.maxTime_sec = 1200;  % simulation cap
 
 %% ==========================================================
-%  SECTION D — RUN SIMULATION
+%  SECTION D — RUN SCENARIOS
 %  ==========================================================
-out = runSimulation(SCEN, SIM);
+for scen_id = 1:4
 
-evidence = struct();
-evidence.TimeToCruise_sec  = out.timeToCruise_sec(end);
-evidence.IsCruise          = double(out.isCruise(end));
-evidence.FaultOnTimeout    = double(out.faultOnTimeout(end));
-evidence.MaxDiffPressureSafe = double(out.maxDiffPressure_psi(end) <= SCEN.maxDiffPressure_psi);
+    SCEN_CASE = SCEN;
+    SCEN_CASE.id = scen_id;
 
-%% ==========================================================
-%  SECTION E — VERIFY REQUIREMENTS
-%  ==========================================================
-V = verifyRequirements(REQ, evidence);
+    switch scen_id
+        case 1
+            SCEN_CASE.name = "SCEN-01: Normal Operation";
+            SCEN_CASE.sensorFault = false;
+            SCEN_CASE.cabinClimbRate_ftps = 10;
+            SCEN_CASE.maxDiffPressure_psi = 8.5;
 
-disp("=== Evidence ===");
-disp(struct2table(evidence));
-disp("=== Verification Matrix ===");
-disp(V);
+        case 2
+            SCEN_CASE.name = "SCEN-02: Sensor Fault";
+            SCEN_CASE.sensorFault = true;
+
+        case 3
+            SCEN_CASE.name = "SCEN-03: Slow Cabin Response";
+            SCEN_CASE.sensorFault = false;
+            SCEN_CASE.cabinClimbRate_ftps = 4;
+
+        case 4
+            SCEN_CASE.name = "SCEN-04: Reduced Pressure Limit";
+            SCEN_CASE.sensorFault = false;
+            SCEN_CASE.maxDiffPressure_psi = 5.0;
+    end
+
+    out = runSimulation(SCEN_CASE, SIM);
+
+    evidence = struct();
+    evidence.TimeToCruise_sec = out.timeToCruise_sec(end);
+    evidence.IsCruise = double(out.isCruise(end));
+    evidence.FaultOnTimeout = double(out.faultOnTimeout(end));
+    evidence.MaxDiffPressureSafe = double(out.maxDiffPressure_psi(end) <= SCEN_CASE.maxDiffPressure_psi);
+
+    %% ==========================================================
+    %  SECTION E — VERIFY REQUIREMENTS
+    %  ==========================================================
+    V = verifyRequirements(REQ, evidence);
+
+    disp("==========================================================");
+    disp(SCEN_CASE.name);
+    disp("==========================================================");
+    disp("=== Evidence (Simulation Output) ===");
+    disp(struct2table(evidence));
+    disp("=== Verification Matrix ===");
+    disp(V);
+
+end
 
 %% ==========================================================
 %  SECTION F — PLOTS
