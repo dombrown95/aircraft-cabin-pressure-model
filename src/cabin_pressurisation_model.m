@@ -30,34 +30,34 @@ REQ = table( ...
 SCEN.name = "Nominal Cabin Pressurisation Design";
 
 % Aircraft profile
-SCEN.takeoffAltitude_ft = 1000;          
-SCEN.cruiseAircraftAlt_ft = 35000;       
-SCEN.aircraftClimbRate_ftps = 50;        
+SCEN.takeoffAltitude_ft = 1000;          % above this, aircraft is considered airborne
+SCEN.cruiseAircraftAlt_ft = 35000;       % target aircraft altitude
+SCEN.aircraftClimbRate_ftps = 50;        % aircraft climb rate (ft/s)
 
 % Cabin pressurisation behaviour
-SCEN.initialCabinAlt_ft = 0;             
-SCEN.targetCabinAlt_ft = 8000;           
-SCEN.cabinClimbRate_ftps = 10;           
+SCEN.initialCabinAlt_ft = 0;             % starting cabin altitude
+SCEN.targetCabinAlt_ft = 8000;           % cabin altitude at cruise
+SCEN.cabinClimbRate_ftps = 10;           % cabin altitude changes more slowly than aircraft altitude
 
 % Safety / logic
-SCEN.maxDiffPressure_psi = 8.5;          
-SCEN.psiPerFt = 0.00025;                 
-SCEN.timeout_sec = 900;                  
+SCEN.maxDiffPressure_psi = 8.5;          % maximum allowable differential pressure
+SCEN.psiPerFt = 0.00025;                 % simplified conversion from altitude difference to psi
+SCEN.timeout_sec = 900;                  % timeout for reaching cruise mode
 
-% Variability controls (Week 3: deterministic)
+% Variability controls (deterministic)
 SCEN.stdAircraftClimbRate_ftps = 0.0;
 SCEN.stdCabinClimbRate_ftps = 0.0;
 
 % Fault settings
-SCEN.sensorFault = false;                
-SCEN.pRandomFailurePerSec = 0.0;         
+SCEN.sensorFault = false;                % nominal run = false
+SCEN.pRandomFailurePerSec = 0.0;         % nominal run = 0
 
 %% ==========================================================
 %  SECTION C — SIMULATION SETTINGS
 %  ==========================================================
 SIM.N = 5;
-SIM.dt = 1.0;            
-SIM.maxTime_sec = 1200;
+SIM.dt = 1.0;            % seconds
+SIM.maxTime_sec = 1200;  % simulation cap
 
 %% ==========================================================
 %  SECTION D — RUN SIMULATION
@@ -65,9 +65,9 @@ SIM.maxTime_sec = 1200;
 out = runSimulation(SCEN, SIM);
 
 evidence = struct();
-evidence.TimeToCruise_sec = out.timeToCruise_sec(end);
-evidence.IsCruise = double(out.isCruise(end));
-evidence.FaultOnTimeout = double(out.faultOnTimeout(end));
+evidence.TimeToCruise_sec  = out.timeToCruise_sec(end);
+evidence.IsCruise          = double(out.isCruise(end));
+evidence.FaultOnTimeout    = double(out.faultOnTimeout(end));
 evidence.MaxDiffPressureSafe = double(out.maxDiffPressure_psi(end) <= SCEN.maxDiffPressure_psi);
 
 %% ==========================================================
@@ -79,6 +79,37 @@ disp("=== Evidence ===");
 disp(struct2table(evidence));
 disp("=== Verification Matrix ===");
 disp(V);
+
+%% ==========================================================
+%  SECTION F — PLOTS
+%  ==========================================================
+figure;
+plot(out.timeToCruise_sec, '-o');
+xlabel('Run #');
+ylabel('Time To Cruise (sec)');
+title('Time to Reach Cruise Mode Across Runs');
+
+figure;
+bar(out.isCruise);
+xlabel('Run #');
+ylabel('IsCruise (1=true)');
+title('End State CRUISE Across Runs');
+
+figure;
+plot(out.maxDiffPressure_psi, '-o');
+xlabel('Run #');
+ylabel('Maximum Differential Pressure (psi)');
+title('Maximum Differential Pressure Across Runs');
+
+%% ==========================================================
+%  OPTIONAL MINI REPORT
+%  ==========================================================
+fprintf("\n--- Mini MBSE Report ---\n");
+fprintf("Scenario: %s\n", SCEN.name);
+fprintf("Runs: %d | dt: %.2f sec\n", SIM.N, SIM.dt);
+fprintf("Example evidence used for verification: last run\n");
+fprintf("TimeToCruise_sec: %.2f | IsCruise: %d | FaultOnTimeout: %d | MaxDiffPressureSafe: %d\n", ...
+    evidence.TimeToCruise_sec, evidence.IsCruise, evidence.FaultOnTimeout, evidence.MaxDiffPressureSafe);
 
 %% ==========================================================
 %  Local Functions
@@ -141,21 +172,25 @@ function [isCruise, timeToCruise_sec, faultOnTimeout, maxDiffPressure_psi] = sim
                 end
 
             case "PRESSURISING"
+                % Cabin altitude rises more slowly than aircraft altitude
                 if cabinAlt_ft < scen.targetCabinAlt_ft
                     cabinAlt_ft = cabinAlt_ft + cabinClimbRate * dt;
                 end
 
+                % Safety check
                 if diffPressure_psi > scen.maxDiffPressure_psi
                     state = "FAULT";
                     break;
                 end
 
+                % Cruise condition
                 if aircraftAlt_ft >= scen.cruiseAircraftAlt_ft && ...
                    abs(cabinAlt_ft - scen.targetCabinAlt_ft) <= 100
                     state = "CRUISE";
                     break;
                 end
 
+                % Timeout check
                 if t >= scen.timeout_sec
                     state = "FAULT";
                     faultOnTimeout = true;
