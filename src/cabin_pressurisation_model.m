@@ -173,6 +173,10 @@ for scen_id = 1:4
     fprintf("IsCruise: %d | FaultOnTimeout: %d | MaxDiffPressureSafe: %d | SensorFaultDetected: %d | IsFaultState: %d\n\n", ...
         evidence.IsCruise, evidence.FaultOnTimeout, evidence.MaxDiffPressureSafe, evidence.SensorFaultDetected, evidence.IsFaultState);
 
+    % Auto-generated scenario conclusion
+    conclusionText = generateScenarioConclusion(SCEN_CASE, evidence, V);
+    fprintf("Scenario Conclusion: %s\n\n", conclusionText);
+
 end
 
 %% ==========================================================
@@ -417,4 +421,47 @@ function V = verifyRequirements(REQ, evidence, expectedPass, applicable)
     V = table(REQ.ID, REQ.Statement, REQ.Metric, Observed, REQ.Operator, REQ.Threshold, ...
         Applicable, ExpectedPass, ActualPass, Outcome, REQ.Scope, REQ.Notes, ...
         'VariableNames', {'ReqID','Statement','Metric','Observed','Operator','Threshold','Applicable','ExpectedPass','ActualPass','Outcome','Scope','Notes'});
+end
+
+function conclusionText = generateScenarioConclusion(scen, evidence, V)
+    nPass = sum(V.Outcome == "PASS");
+    nUnexpectedFail = sum(V.Outcome == "UNEXPECTED_FAIL");
+    nUnexpectedPass = sum(V.Outcome == "UNEXPECTED_PASS");
+    nExpectedFail = sum(V.Outcome == "EXPECTED_FAIL");
+    nNotApplicable = sum(V.Outcome == "NOT_APPLICABLE");
+
+    if scen.isNominal
+        if evidence.IsCruise == 1 && evidence.FaultOnTimeout == 0 && evidence.MaxDiffPressureSafe == 1
+            conclusionText = "Nominal scenario passed all key applicable requirements and reached CRUISE state within the required time.";
+        else
+            conclusionText = "Nominal scenario did not satisfy all key applicable requirements.";
+        end
+
+    elseif scen.sensorFault
+        if evidence.SensorFaultDetected == 1 && evidence.IsFaultState == 1
+            conclusionText = "Sensor fault scenario correctly transitioned to FAULT state and satisfied fault-handling requirements.";
+        else
+            conclusionText = "Sensor fault scenario did not fully satisfy expected fault-handling behaviour.";
+        end
+
+    elseif contains(scen.name, "Slow Cabin Response")
+        if evidence.FaultOnTimeout == 1
+            conclusionText = "Slow cabin response scenario triggered timeout protection as expected.";
+        else
+            conclusionText = "Slow cabin response scenario did not trigger expected timeout behaviour.";
+        end
+
+    elseif contains(scen.name, "Reduced Pressure Limit")
+        if evidence.MaxDiffPressureSafe == 0
+            conclusionText = "Reduced pressure limit scenario correctly detected safety violation and entered FAULT.";
+        else
+            conclusionText = "Reduced pressure limit scenario did not trigger expected safety response.";
+        end
+
+    else
+        conclusionText = "Scenario completed.";
+    end
+
+    conclusionText = sprintf('%s Verification outcomes: %d PASS, %d EXPECTED_FAIL, %d UNEXPECTED_FAIL, %d UNEXPECTED_PASS, %d NOT_APPLICABLE.', ...
+        conclusionText, nPass, nExpectedFail, nUnexpectedFail, nUnexpectedPass, nNotApplicable);
 end
