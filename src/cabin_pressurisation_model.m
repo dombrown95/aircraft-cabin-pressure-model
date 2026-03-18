@@ -59,6 +59,18 @@ SIM.dt = 1.0;            % seconds
 SIM.maxTime_sec = 1200;  % simulation cap
 
 %% ==========================================================
+%  SECTION C2 — MONTE CARLO SETTINGS
+%  ==========================================================
+MC.enabled = true;
+MC.N = 1000;                 % number of Monte Carlo samples
+MC.dt = SIM.dt;
+MC.maxTime_sec = SIM.maxTime_sec;
+
+% Uncertainty magnitudes
+MC.stdAircraftClimbRate_ftps = 1.0;
+MC.stdCabinClimbRate_ftps = 0.8;
+
+%% ==========================================================
 %  SECTION D — RUN SCENARIOS
 %  ==========================================================
 for scen_id = 1:4
@@ -180,6 +192,93 @@ for scen_id = 1:4
 end
 
 %% ==========================================================
+%  SECTION F — MONTE CARLO SIMULATION
+%  ==========================================================
+if MC.enabled
+
+    MC_SCEN = struct([]);
+
+    MC_SCEN(1).name = "Nominal";
+    MC_SCEN(1).cabinClimbRate_ftps = 12;
+    MC_SCEN(1).maxDiffPressure_psi = 8.5;
+
+    MC_SCEN(2).name = "Slow Cabin Response";
+    MC_SCEN(2).cabinClimbRate_ftps = 4;
+    MC_SCEN(2).maxDiffPressure_psi = 8.5;
+
+    MC_SCEN(3).name = "Reduced Pressure Limit";
+    MC_SCEN(3).cabinClimbRate_ftps = 12;
+    MC_SCEN(3).maxDiffPressure_psi = 5.0;
+
+    MC_SCEN(4).name = "Combined Degradation";
+    MC_SCEN(4).cabinClimbRate_ftps = 4;
+    MC_SCEN(4).maxDiffPressure_psi = 5.0;
+
+    mcSummary = table('Size',[numel(MC_SCEN), 5], ...
+        'VariableTypes', {'string','double','double','double','double'}, ...
+        'VariableNames', {'Scenario','MeanTimeToCruise_sec','PassRate_percent','CruiseSuccessRate_percent','FaultRate_percent'});
+
+    figure('Name', 'Monte Carlo Time-to-Cruise Distribution', 'Position', [100 100 1100 500]);
+    hold on;
+
+    legendEntries = strings(numel(MC_SCEN),1);
+
+    for k = 1:numel(MC_SCEN)
+        scenMC = SCEN;
+        scenMC.name = MC_SCEN(k).name;
+        scenMC.sensorFault = false;
+        scenMC.sensorFaultStart_sec = inf;
+        scenMC.isNominal = false;
+
+        scenMC.cabinClimbRate_ftps = MC_SCEN(k).cabinClimbRate_ftps;
+        scenMC.maxDiffPressure_psi = MC_SCEN(k).maxDiffPressure_psi;
+
+        scenMC.stdAircraftClimbRate_ftps = MC.stdAircraftClimbRate_ftps;
+        scenMC.stdCabinClimbRate_ftps = MC.stdCabinClimbRate_ftps;
+
+        mcOut = runMonteCarloSimulation(scenMC, MC);
+
+        % Requirement-style pass for REQ-01:
+        % must reach CRUISE and do so within 750 sec
+        req1Threshold = REQ.Threshold(REQ.ID == "REQ-01");
+        req1Pass = (mcOut.timeToCruise_sec <= req1Threshold) & (mcOut.isCruise == 1);
+
+        meanTime = mean(mcOut.timeToCruise_sec, 'omitnan');
+        passRate = 100 * mean(req1Pass);
+        cruiseRate = 100 * mean(mcOut.isCruise);
+        faultRate = 100 * mean(mcOut.finalState == "FAULT");
+
+        mcSummary.Scenario(k) = MC_SCEN(k).name;
+        mcSummary.MeanTimeToCruise_sec(k) = meanTime;
+        mcSummary.PassRate_percent(k) = passRate;
+        mcSummary.CruiseSuccessRate_percent(k) = cruiseRate;
+        mcSummary.FaultRate_percent(k) = faultRate;
+
+        % Plot approximate density using histogram normalisation
+        histogram(mcOut.timeToCruise_sec, 30, ...
+            'Normalization', 'pdf', ...
+            'DisplayStyle', 'stairs', ...
+            'LineWidth', 2);
+
+        legendEntries(k) = MC_SCEN(k).name;
+    end
+
+    xline(750, '--k', 'Requirement Threshold', 'LineWidth', 1.5);
+    xlabel('Time to Cruise (sec)');
+    ylabel('Probability Density');
+    title('Monte Carlo Time-to-Cruise Distribution');
+    legend(legendEntries, 'Location', 'northeast');
+    grid on;
+    hold off;
+
+    disp("==========================================================");
+    disp("Monte Carlo Summary");
+    disp("==========================================================");
+    disp(mcSummary);
+
+end
+
+%% ==========================================================
 %  Local Functions
 %  ==========================================================
 
@@ -211,6 +310,27 @@ function out = runSimulation(scen, SIM)
             out.stateLog = stateLog;
             out.finalState = finalState;
         end
+    end
+end
+
+function mcOut = runMonteCarloSimulation(scen, MC)
+    N = MC.N;
+
+    mcOut.timeToCruise_sec = nan(N,1);
+    mcOut.isCruise = false(N,1);
+    mcOut.faultOnTimeout = false(N,1);
+    mcOut.maxDiffPressure_psi = nan(N,1);
+    mcOut.finalState = strings(N,1);
+
+    for i = 1:N
+        [isCruise, timeToCruise_sec, faultOnTimeout, maxDiffPressure_psi, ...
+            ~, ~, ~, ~, ~, finalState] = simulateOneRun(scen, MC.dt, MC.maxTime_sec);
+
+        mcOut.isCruise(i) = isCruise;
+        mcOut.timeToCruise_sec(i) = timeToCruise_sec;
+        mcOut.faultOnTimeout(i) = faultOnTimeout;
+        mcOut.maxDiffPressure_psi(i) = maxDiffPressure_psi;
+        mcOut.finalState(i) = finalState;
     end
 end
 
