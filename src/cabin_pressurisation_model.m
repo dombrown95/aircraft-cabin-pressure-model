@@ -115,10 +115,13 @@ for scen_id = 1:4
     %  SECTION E — VERIFY REQUIREMENTS
     %  ==========================================================
     if SCEN_CASE.sensorFault
-        V = verifyRequirements(REQ, evidence);
+        REQ_ACTIVE = REQ;
     else
-        V = verifyRequirements(REQ(REQ.ID ~= "REQ-06", :), evidence);
+        REQ_ACTIVE = REQ(REQ.ID ~= "REQ-06", :);
     end
+
+    [expectedPass, applicable] = buildExpectedResults(REQ_ACTIVE, SCEN_CASE);
+    V = verifyRequirements(REQ_ACTIVE, evidence, expectedPass, applicable);
 
     disp("==========================================================");
     disp(SCEN_CASE.name);
@@ -310,18 +313,62 @@ function [isCruise, timeToCruise_sec, faultOnTimeout, maxDiffPressure_psi, ...
     timeToCruise_sec = t;
 end
 
-function V = verifyRequirements(REQ, evidence)
+function [expectedPass, applicable] = buildExpectedResults(REQ, scen)
+    n = height(REQ);
+    expectedPass = false(n,1);
+    applicable = true(n,1);
+
+    for i = 1:n
+        reqID = REQ.ID(i);
+
+        switch reqID
+            case "REQ-01"
+                expectedPass(i) = scen.isNominal;
+                applicable(i) = true;
+
+            case "REQ-02"
+                expectedPass(i) = scen.isNominal;
+                applicable(i) = scen.isNominal;
+
+            case "REQ-03"
+                expectedPass(i) = scen.isNominal;
+                applicable(i) = true;
+
+            case "REQ-04"
+                expectedPass(i) = scen.sensorFault;
+                applicable(i) = scen.sensorFault;
+
+            case "REQ-05"
+                expectedPass(i) = contains(scen.name, "Slow Cabin Response");
+                applicable(i) = true;
+
+            case "REQ-06"
+                expectedPass(i) = scen.sensorFault;
+                applicable(i) = scen.sensorFault;
+
+            otherwise
+                expectedPass(i) = false;
+                applicable(i) = true;
+        end
+    end
+end
+
+function V = verifyRequirements(REQ, evidence, expectedPass, applicable)
     n = height(REQ);
 
     Observed = strings(n,1);
-    Pass = false(n,1);
+    ActualPass = false(n,1);
+    ExpectedPass = expectedPass;
+    Applicable = applicable;
+    Outcome = strings(n,1);
 
     for i = 1:n
         metricName = REQ.Metric{i};
 
         if ~isfield(evidence, metricName)
             Observed(i) = "MISSING_METRIC";
-            Pass(i) = false;
+            ActualPass(i) = false;
+            Outcome(i) = "MISSING_METRIC";
             continue;
         end
 
@@ -331,22 +378,43 @@ function V = verifyRequirements(REQ, evidence)
         op = REQ.Operator{i};
         thr = REQ.Threshold(i);
 
-        switch op
-            case "<="
-                Pass(i) = (obs <= thr);
-            case "<"
-                Pass(i) = (obs < thr);
-            case ">="
-                Pass(i) = (obs >= thr);
-            case ">"
-                Pass(i) = (obs > thr);
-            case "=="
-                Pass(i) = (obs == thr);
-            otherwise
-                Pass(i) = false;
+        % Special handling for REQ-01 (must reach cruise AND within time)
+        if REQ.ID(i) == "REQ-01"
+            ActualPass(i) = (evidence.TimeToCruise_sec <= thr) && (evidence.IsCruise == 1);
+        else
+            switch op
+                case "<="
+                    ActualPass(i) = (obs <= thr);
+                case "<"
+                    ActualPass(i) = (obs < thr);
+                case ">="
+                    ActualPass(i) = (obs >= thr);
+                case ">"
+                    ActualPass(i) = (obs > thr);
+                case "=="
+                    ActualPass(i) = (obs == thr);
+                otherwise
+                    ActualPass(i) = false;
+            end
+        end
+
+        % Applicability logic
+        if ~Applicable(i)
+            Outcome(i) = "NOT_APPLICABLE";
+        else
+            if ExpectedPass(i) && ActualPass(i)
+                Outcome(i) = "PASS";
+            elseif ~ExpectedPass(i) && ~ActualPass(i)
+                Outcome(i) = "EXPECTED_FAIL";
+            elseif ExpectedPass(i) && ~ActualPass(i)
+                Outcome(i) = "UNEXPECTED_FAIL";
+            elseif ~ExpectedPass(i) && ActualPass(i)
+                Outcome(i) = "UNEXPECTED_PASS";
+            end
         end
     end
 
-    V = table(REQ.ID, REQ.Statement, REQ.Metric, Observed, REQ.Operator, REQ.Threshold, Pass, REQ.Scope, REQ.Notes, ...
-        'VariableNames', {'ReqID','Statement','Metric','Observed','Operator','Threshold','Pass','Scope','Notes'});
+    V = table(REQ.ID, REQ.Statement, REQ.Metric, Observed, REQ.Operator, REQ.Threshold, ...
+        Applicable, ExpectedPass, ActualPass, Outcome, REQ.Scope, REQ.Notes, ...
+        'VariableNames', {'ReqID','Statement','Metric','Observed','Operator','Threshold','Applicable','ExpectedPass','ActualPass','Outcome','Scope','Notes'});
 end
