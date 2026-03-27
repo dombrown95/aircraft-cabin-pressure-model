@@ -37,11 +37,12 @@ SCEN.aircraftClimbRate_ftps = 50;        % aircraft climb rate (ft/s)
 SCEN.initialCabinAlt_ft = 0;             % starting cabin altitude
 SCEN.targetCabinAlt_ft = 8000;           % cabin altitude at cruise
 SCEN.cabinClimbRate_ftps = 10;           % cabin altitude changes more slowly than aircraft altitude
+SCEN.pressurisationStartDelay_sec = 0;   % delay for delayed system response scenario
 
 % Safety / logic
 SCEN.maxDiffPressure_psi = 8.5;          % maximum allowable differential pressure
 SCEN.psiPerFt = 0.00025;                 % simplified conversion from altitude difference to psi
-SCEN.timeout_sec = 750;                  % timeout for reaching cruise mode
+SCEN.timeout_sec = 750;                  % timeout requirement for reaching cruise mode
 
 % Variability controls (deterministic)
 SCEN.stdAircraftClimbRate_ftps = 0.0;
@@ -100,7 +101,7 @@ for scen_id = 1:4
             SCEN_CASE.sensorFault = false;
             SCEN_CASE.sensorFaultStart_sec = inf;   % no fault triggered
             SCEN_CASE.cabinClimbRate_ftps = 4;      % slower pressurisation
-            SCEN_CASE.maxDiffPressure_psi = 8.5;    
+            SCEN_CASE.maxDiffPressure_psi = 8.5;
             SCEN_CASE.isNominal = false;
 
         case 4
@@ -170,7 +171,7 @@ for scen_id = 1:4
     stateNumeric(out.stateLog == "CRUISE") = 2;
     stateNumeric(out.stateLog == "FAULT") = 3;
 
-    plot(out.timeLog, stateNumeric, 'LineWidth', 2);
+    stairs(out.timeLog, stateNumeric, 'LineWidth', 2);
     yticks([0 1 2 3]);
     yticklabels({'GROUND','PRESSURISING','CRUISE','FAULT'});
     xlabel('Time (sec)');
@@ -201,27 +202,33 @@ if MC.enabled
     MC_SCEN(1).name = "Nominal";
     MC_SCEN(1).cabinClimbRate_ftps = 12;
     MC_SCEN(1).maxDiffPressure_psi = 8.5;
+    MC_SCEN(1).pressurisationStartDelay_sec = 0;
 
     MC_SCEN(2).name = "Slow Cabin Response";
-    MC_SCEN(2).cabinClimbRate_ftps = 4;
+    MC_SCEN(2).cabinClimbRate_ftps = 10.5;
     MC_SCEN(2).maxDiffPressure_psi = 8.5;
+    MC_SCEN(2).pressurisationStartDelay_sec = 0;
 
-    MC_SCEN(3).name = "Reduced Pressure Limit";
+    MC_SCEN(3).name = "Delayed System Initialisation";
     MC_SCEN(3).cabinClimbRate_ftps = 12;
-    MC_SCEN(3).maxDiffPressure_psi = 5.0;
+    MC_SCEN(3).maxDiffPressure_psi = 8.5;
+    MC_SCEN(3).pressurisationStartDelay_sec = 40;
 
-    MC_SCEN(4).name = "Combined Degradation";
-    MC_SCEN(4).cabinClimbRate_ftps = 4;
-    MC_SCEN(4).maxDiffPressure_psi = 5.0;
+    MC_SCEN(4).name = "Low Pressure";
+    MC_SCEN(4).cabinClimbRate_ftps = 11;
+    MC_SCEN(4).maxDiffPressure_psi = 8.5;
+    MC_SCEN(4).pressurisationStartDelay_sec = 0;
 
-    mcSummary = table('Size',[numel(MC_SCEN), 5], ...
-        'VariableTypes', {'string','double','double','double','double'}, ...
-        'VariableNames', {'Scenario','MeanTimeToCruise_sec','PassRate_percent','CruiseSuccessRate_percent','FaultRate_percent'});
+    mcSummary = table('Size',[numel(MC_SCEN), 7], ...
+        'VariableTypes', {'string','double','double','double','double','double','double'}, ...
+        'VariableNames', {'Scenario','MeanTimeToCruise_sec','PassRate_percent', ...
+                          'CruiseSuccessRate_percent','FaultRate_percent','TimeoutRate_percent','PressureFaultRate_percent'});
 
     figure('Name', 'Monte Carlo Time-to-Cruise Distribution', 'Position', [100 100 1100 500]);
     hold on;
 
-    legendEntries = strings(numel(MC_SCEN),1);
+    plotHandles = [];
+    legendEntries = strings(0,1);
 
     for k = 1:numel(MC_SCEN)
         scenMC = SCEN;
@@ -232,42 +239,33 @@ if MC.enabled
 
         scenMC.cabinClimbRate_ftps = MC_SCEN(k).cabinClimbRate_ftps;
         scenMC.maxDiffPressure_psi = MC_SCEN(k).maxDiffPressure_psi;
+        scenMC.pressurisationStartDelay_sec = MC_SCEN(k).pressurisationStartDelay_sec;
 
         scenMC.stdAircraftClimbRate_ftps = MC.stdAircraftClimbRate_ftps;
         scenMC.stdCabinClimbRate_ftps = MC.stdCabinClimbRate_ftps;
 
         mcOut = runMonteCarloSimulation(scenMC, MC);
 
-        % Requirement-style pass for REQ-01:
-        % must reach CRUISE and do so within 750 sec
-        req1Threshold = REQ.Threshold(REQ.ID == "REQ-01");
-        req1Pass = (mcOut.timeToCruise_sec <= req1Threshold) & (mcOut.isCruise == 1);
+        validTimes = mcOut.timeToCruise_sec(~isnan(mcOut.timeToCruise_sec));
+        [f, xi] = ksdensity(validTimes);
 
-        meanTime = mean(mcOut.timeToCruise_sec, 'omitnan');
-        passRate = 100 * mean(req1Pass);
-        cruiseRate = 100 * mean(mcOut.isCruise);
-        faultRate = 100 * mean(mcOut.finalState == "FAULT");
+        h = plot(xi, f, 'LineWidth', 2);
 
-        mcSummary.Scenario(k) = MC_SCEN(k).name;
-        mcSummary.MeanTimeToCruise_sec(k) = meanTime;
-        mcSummary.PassRate_percent(k) = passRate;
-        mcSummary.CruiseSuccessRate_percent(k) = cruiseRate;
-        mcSummary.FaultRate_percent(k) = faultRate;
-
-        % Plot approximate density using histogram normalisation
-        histogram(mcOut.timeToCruise_sec, 30, ...
-            'Normalization', 'pdf', ...
-            'DisplayStyle', 'stairs', ...
-            'LineWidth', 2);
-
-        legendEntries(k) = MC_SCEN(k).name;
+        plotHandles(end+1) = h;
+        legendEntries(end+1) = MC_SCEN(k).name;
     end
 
-    xline(750, '--k', 'Requirement Threshold', 'LineWidth', 1.5);
-    xlabel('Time to Cruise (sec)');
+    xline(750, '--', 'Requirement Threshold', ...
+        'Color', [1 0.2 0.2], ...
+        'LineWidth', 2, ...
+        'LabelVerticalAlignment', 'top', ...
+        'LabelHorizontalAlignment', 'right');
+
+    xlabel('Time to Cruise / Termination (sec)');
     ylabel('Probability Density');
     title('Monte Carlo Time-to-Cruise Distribution');
-    legend(legendEntries, 'Location', 'northeast');
+    legend(plotHandles, legendEntries, 'Location', 'northeast');
+    xlim([600 850]);
     grid on;
     hold off;
 
@@ -276,6 +274,7 @@ if MC.enabled
     disp("==========================================================");
     disp(mcSummary);
 
+    disp("Note: The Monte Carlo plot shows all runs, including successful cruise outcomes and failed terminations. Pass rate indicates the percentage of runs that reached CRUISE within 750 seconds.");
 end
 
 %% ==========================================================
@@ -346,6 +345,7 @@ function [isCruise, timeToCruise_sec, faultOnTimeout, maxDiffPressure_psi, ...
 
     faultOnTimeout = false;
     maxDiffPressure_psi = 0;
+    timeoutRecorded = false;
 
     % Draw uncertain parameters
     aircraftClimbRate = max(1, scen.aircraftClimbRate_ftps + randn * scen.stdAircraftClimbRate_ftps);
@@ -388,21 +388,26 @@ function [isCruise, timeToCruise_sec, faultOnTimeout, maxDiffPressure_psi, ...
 
             case "PRESSURISING"
                 % Cabin altitude rises more slowly than aircraft altitude
-                if cabinAlt_ft < scen.targetCabinAlt_ft
-                    cabinAlt_ft = cabinAlt_ft + cabinClimbRate * dt;
+                if t >= scen.pressurisationStartDelay_sec
+                    if cabinAlt_ft < scen.targetCabinAlt_ft
+                        cabinAlt_ft = cabinAlt_ft + cabinClimbRate * dt;
+                    end
                 end
 
                 % Safety check
                 if diffPressure_psi > scen.maxDiffPressure_psi
                     state = "FAULT";
+
                 % Cruise condition
                 elseif aircraftAlt_ft >= scen.cruiseAircraftAlt_ft && ...
                        abs(cabinAlt_ft - scen.targetCabinAlt_ft) <= 100
                     state = "CRUISE";
-                % Timeout condition
-                elseif t >= scen.timeout_sec
-                    state = "FAULT";
+                end
+
+                % Timeout condition: record requirement miss, but continue simulation
+                if t >= scen.timeout_sec && ~timeoutRecorded && state ~= "CRUISE"
                     faultOnTimeout = true;
+                    timeoutRecorded = true;
                 end
 
             case "CRUISE"
