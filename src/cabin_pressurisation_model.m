@@ -227,8 +227,8 @@ if MC.enabled
     figure('Name', 'Monte Carlo Time-to-Cruise Distribution', 'Position', [100 100 1100 500]);
     hold on;
 
-    plotHandles = [];
-    legendEntries = strings(0,1);
+    plotHandles = gobjects(numel(MC_SCEN), 1);
+    legendEntries = strings(numel(MC_SCEN), 1);
 
     for k = 1:numel(MC_SCEN)
         scenMC = SCEN;
@@ -246,13 +246,38 @@ if MC.enabled
 
         mcOut = runMonteCarloSimulation(scenMC, MC);
 
+        % Requirement-style pass for REQ-01:
+        % must reach CRUISE within the 750 second threshold
+        req1Threshold = REQ.Threshold(REQ.ID == "REQ-01");
+        req1Pass = (mcOut.timeToCruise_sec <= req1Threshold) & (mcOut.isCruise == 1);
+
+        % Summary statistics
+        meanTime = mean(mcOut.timeToCruise_sec, 'omitnan');
+        passRate = 100 * mean(req1Pass);
+        cruiseRate = 100 * mean(mcOut.isCruise);
+        faultRate = 100 * mean(mcOut.finalState == "FAULT");
+        timeoutRate = 100 * mean(mcOut.faultOnTimeout);
+        pressureFaultRate = 100 * mean((mcOut.finalState == "FAULT") & (~mcOut.faultOnTimeout));
+
+        mcSummary.Scenario(k) = MC_SCEN(k).name;
+        mcSummary.MeanTimeToCruise_sec(k) = meanTime;
+        mcSummary.PassRate_percent(k) = passRate;
+        mcSummary.CruiseSuccessRate_percent(k) = cruiseRate;
+        mcSummary.FaultRate_percent(k) = faultRate;
+        mcSummary.TimeoutRate_percent(k) = timeoutRate;
+        mcSummary.PressureFaultRate_percent(k) = pressureFaultRate;
+
+        % Smoothed probability density plot
         validTimes = mcOut.timeToCruise_sec(~isnan(mcOut.timeToCruise_sec));
-        [f, xi] = ksdensity(validTimes);
 
-        h = plot(xi, f, 'LineWidth', 2);
+        if numel(validTimes) > 1
+            [f, xi] = ksdensity(validTimes);
+            plotHandles(k) = plot(xi, f, 'LineWidth', 2);
+        else
+            plotHandles(k) = plot(validTimes, 0, '.', 'MarkerSize', 12);
+        end
 
-        plotHandles(end+1) = h;
-        legendEntries(end+1) = MC_SCEN(k).name;
+        legendEntries(k) = MC_SCEN(k).name;
     end
 
     xline(750, '--', 'Requirement Threshold', ...
