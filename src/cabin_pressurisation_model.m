@@ -13,7 +13,7 @@ REQ = table( ...
      "The cabin pressurisation system shall end in CRUISE mode under nominal conditions."; ...
      "The system shall not exceed the maximum differential pressure limit under nominal conditions."; ...
      "The system shall declare FAULT when sensor data is unavailable."; ...
-     "The system shall declare FAULT if cruise conditions are not achieved within the timeout."; ...
+     "The system shall flag a timeout condition if cruise conditions are not achieved within 750 seconds."; ...
      "The system shall enter FAULT state under sensor fault conditions."], ...
     ["TimeToCruise_sec"; "IsCruise"; "MaxDiffPressureSafe"; "SensorFaultDetected"; "FaultOnTimeout"; "IsFaultState"], ...
     ["<="; "=="; "=="; "=="; "=="; "=="], ...
@@ -43,6 +43,7 @@ SCEN.pressurisationStartDelay_sec = 0;   % delay for delayed system response sce
 SCEN.maxDiffPressure_psi = 8.5;          % maximum allowable differential pressure
 SCEN.psiPerFt = 0.00025;                 % simplified conversion from altitude difference to psi
 SCEN.timeout_sec = 750;                  % timeout requirement for reaching cruise mode
+SCEN.faultOnTimeoutEnabled = false;      
 
 % Variability controls (deterministic)
 SCEN.stdAircraftClimbRate_ftps = 0.0;
@@ -78,6 +79,7 @@ for scen_id = 1:4
 
     SCEN_CASE = SCEN;
     SCEN_CASE.id = scen_id;
+    SCEN_CASE.faultOnTimeoutEnabled = true;   % scenario plots go to FAULT on timeout
 
     switch scen_id
         case 1
@@ -148,7 +150,10 @@ for scen_id = 1:4
            'Position', [100+(scen_id*40), 100+(scen_id*40), 1000, 450]);
 
     subplot(2,2,1);
-    plot(out.timeLog, out.aircraftAltLog, 'LineWidth', 1.5); hold on;
+    cla;
+    hold off;
+    plot(out.timeLog, out.aircraftAltLog, 'LineWidth', 1.5);
+    hold on;
     plot(out.timeLog, out.cabinAltLog, 'LineWidth', 1.5);
     xlabel('Time (sec)');
     ylabel('Altitude (ft)');
@@ -157,7 +162,10 @@ for scen_id = 1:4
     grid on;
 
     subplot(2,2,3);
-    plot(out.timeLog, out.diffPressureLog, 'LineWidth', 1.5); hold on;
+    cla;
+    hold off;
+    plot(out.timeLog, out.diffPressureLog, 'LineWidth', 1.5);
+    hold on;
     yline(SCEN_CASE.maxDiffPressure_psi, '--', 'Pressure Limit');
     xlabel('Time (sec)');
     ylabel('Differential Pressure (psi)');
@@ -165,6 +173,8 @@ for scen_id = 1:4
     grid on;
 
     subplot(2,2,[2 4]);
+    cla;
+    hold off;
     stateNumeric = zeros(size(out.stateLog));
     stateNumeric(out.stateLog == "GROUND") = 0;
     stateNumeric(out.stateLog == "PRESSURISING") = 1;
@@ -252,6 +262,7 @@ if MC.enabled
         scenMC.sensorFault = false;
         scenMC.sensorFaultStart_sec = inf;
         scenMC.isNominal = false;
+        scenMC.faultOnTimeoutEnabled = false;  % keep Monte Carlo unchanged
 
         scenMC.cabinClimbRate_ftps = MC_SCEN(k).cabinClimbRate_ftps;
         scenMC.maxDiffPressure_psi = MC_SCEN(k).maxDiffPressure_psi;
@@ -459,10 +470,14 @@ function [isCruise, timeToCruise_sec, faultOnTimeout, maxDiffPressure_psi, ...
                     state = "CRUISE";
                 end
 
-                % Timeout condition: record requirement miss, but continue simulation
+                % Timeout condition
                 if t >= scen.timeout_sec && ~timeoutRecorded && state ~= "CRUISE"
                     faultOnTimeout = true;
                     timeoutRecorded = true;
+
+                    if isfield(scen, 'faultOnTimeoutEnabled') && scen.faultOnTimeoutEnabled
+                        state = "FAULT";
+                    end
                 end
 
             case "CRUISE"
