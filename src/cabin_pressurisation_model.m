@@ -79,7 +79,7 @@ for scen_id = 1:4
 
     SCEN_CASE = SCEN;
     SCEN_CASE.id = scen_id;
-    SCEN_CASE.faultOnTimeoutEnabled = true;   % scenario plots go to FAULT on timeout
+    SCEN_CASE.faultOnTimeoutEnabled = false;   % scenario plots do not go to FAULT on timeout
 
     switch scen_id
         case 1
@@ -424,7 +424,7 @@ function [isCruise, timeToCruise_sec, faultOnTimeout, maxDiffPressure_psi, ...
     diffPressureLog = zeros(steps,1);
     stateLog = strings(steps,1);
 
-    idx = 1;
+    idx = 0;
 
     while t < maxTime_sec
         % Random fault hazard
@@ -466,7 +466,7 @@ function [isCruise, timeToCruise_sec, faultOnTimeout, maxDiffPressure_psi, ...
 
                 % Cruise condition
                 elseif aircraftAlt_ft >= scen.cruiseAircraftAlt_ft && ...
-                       abs(cabinAlt_ft - scen.targetCabinAlt_ft) <= 100
+                    abs(cabinAlt_ft - scen.targetCabinAlt_ft) <= 100
                     state = "CRUISE";
                 end
 
@@ -487,6 +487,8 @@ function [isCruise, timeToCruise_sec, faultOnTimeout, maxDiffPressure_psi, ...
                 % Hold state
         end
 
+        % Record current sample
+        idx = idx + 1;
         timeLog(idx) = t;
         aircraftAltLog(idx) = aircraftAlt_ft;
         cabinAltLog(idx) = cabinAlt_ft;
@@ -498,7 +500,6 @@ function [isCruise, timeToCruise_sec, faultOnTimeout, maxDiffPressure_psi, ...
         end
 
         t = t + dt;
-        idx = idx + 1;
     end
 
     timeLog = timeLog(1:idx);
