@@ -229,10 +229,10 @@ if MC.enabled
     MC_SCEN(4).maxDiffPressure_psi = 8.5;
     MC_SCEN(4).pressurisationStartDelay_sec = 0;
 
-    mcSummary = table('Size',[numel(MC_SCEN), 5], ...
-        'VariableTypes', {'string','double','double','double','double'}, ...
+    mcSummary = table('Size',[numel(MC_SCEN), 4], ...
+        'VariableTypes', {'string','double','double','double'}, ...
         'VariableNames', {'Scenario','MeanTimeToCruise_sec','PassRate_percent', ...
-                      'CruiseSuccessRate_percent','TimeoutRate_percent'});
+                          'TimeoutRate_percent'});
 
     figure('Name', 'Monte Carlo Time-to-Cruise Distribution', 'Position', [100 100 1100 500]);
     hold on;
@@ -281,13 +281,11 @@ if MC.enabled
         % Summary statistics
         meanTime = mean(mcOut.timeToCruise_sec, 'omitnan');
         passRate = 100 * mean(req1Pass);
-        cruiseRate = 100 * mean(mcOut.isCruise);
         timeoutRate = 100 * mean(mcOut.TimeoutDetected);
 
         mcSummary.Scenario(k) = MC_SCEN(k).name;
         mcSummary.MeanTimeToCruise_sec(k) = meanTime;
         mcSummary.PassRate_percent(k) = passRate;
-        mcSummary.CruiseSuccessRate_percent(k) = cruiseRate;
         mcSummary.TimeoutRate_percent(k) = timeoutRate;
 
         validTimes = mcOut.timeToCruise_sec(~isnan(mcOut.timeToCruise_sec));
@@ -309,7 +307,7 @@ if MC.enabled
     end
 
     % Legend entry for dotted mean lines
-    hMean = plot(nan, nan, ':k', 'LineWidth', 1.5);
+    hMean = plot(nan, nan, ':w', 'LineWidth', 1.5);
 
     % Requirement threshold line
     xline(750, '--', 'Requirement Threshold', ...
@@ -318,9 +316,9 @@ if MC.enabled
         'LabelVerticalAlignment', 'top', ...
         'LabelHorizontalAlignment', 'right');
 
-    xlabel('Time to Cruise / Termination (sec)');
+    xlabel('Time to Cruise / Timeout (sec)');
     ylabel('Probability Density');
-    title('Monte Carlo Time-to-Cruise Distribution (Including Failed Runs)');
+    title('Monte Carlo Time-to-Cruise Distribution (Including Timed-Out Runs)');
 
     legendHandles = [plotHandles; hMean];
     legendEntries = [legendEntries; "Mean time (dotted lines)"];
