@@ -229,10 +229,10 @@ if MC.enabled
     MC_SCEN(4).maxDiffPressure_psi = 8.5;
     MC_SCEN(4).pressurisationStartDelay_sec = 0;
 
-    mcSummary = table('Size',[numel(MC_SCEN), 7], ...
-        'VariableTypes', {'string','double','double','double','double','double','double'}, ...
+    mcSummary = table('Size',[numel(MC_SCEN), 5], ...
+        'VariableTypes', {'string','double','double','double','double'}, ...
         'VariableNames', {'Scenario','MeanTimeToCruise_sec','PassRate_percent', ...
-                          'CruiseSuccessRate_percent','FaultRate_percent','TimeoutRate_percent','PressureFaultRate_percent'});
+                      'CruiseSuccessRate_percent','TimeoutRate_percent'});
 
     figure('Name', 'Monte Carlo Time-to-Cruise Distribution', 'Position', [100 100 1100 500]);
     hold on;
@@ -282,17 +282,13 @@ if MC.enabled
         meanTime = mean(mcOut.timeToCruise_sec, 'omitnan');
         passRate = 100 * mean(req1Pass);
         cruiseRate = 100 * mean(mcOut.isCruise);
-        faultRate = 100 * mean(mcOut.finalState == "FAULT");
         timeoutRate = 100 * mean(mcOut.faultOnTimeout);
-        pressureFaultRate = 100 * mean((mcOut.finalState == "FAULT") & (~mcOut.faultOnTimeout));
 
         mcSummary.Scenario(k) = MC_SCEN(k).name;
         mcSummary.MeanTimeToCruise_sec(k) = meanTime;
         mcSummary.PassRate_percent(k) = passRate;
         mcSummary.CruiseSuccessRate_percent(k) = cruiseRate;
-        mcSummary.FaultRate_percent(k) = faultRate;
         mcSummary.TimeoutRate_percent(k) = timeoutRate;
-        mcSummary.PressureFaultRate_percent(k) = pressureFaultRate;
 
         validTimes = mcOut.timeToCruise_sec(~isnan(mcOut.timeToCruise_sec));
 
