@@ -15,7 +15,7 @@ REQ = table( ...
      "The system shall declare FAULT when sensor data is unavailable."; ...
      "The system shall flag a timeout condition if cruise conditions are not achieved within 750 seconds."; ...
      "The system shall enter FAULT state under sensor fault conditions."], ...
-    ["TimeToCruise_sec"; "IsCruise"; "MaxDiffPressureSafe"; "SensorFaultDetected"; "TimeoutDetected"; "IsFaultState"], ...
+    ["TimeToOutcome_sec"; "IsCruise"; "MaxDiffPressureSafe"; "SensorFaultDetected"; "TimeoutDetected"; "IsFaultState"], ...
     ["<="; "=="; "=="; "=="; "=="; "=="], ...
     [750; 1; 1; 1; 1; 1], ...
     ["SingleRun"; "SingleRun"; "SingleRun"; "SingleRun"; "SingleRun"; "SingleRun"], ...
@@ -118,7 +118,7 @@ for scen_id = 1:4
     out = runSimulation(SCEN_CASE, SIM);
 
     evidence = struct();
-    evidence.TimeToCruise_sec = out.timeToCruise_sec(end);
+    evidence.TimeToOutcome_sec = out.timeToOutcome_sec(end);
     evidence.IsCruise = double(out.isCruise(end));
     evidence.TimeoutDetected = double(out.TimeoutDetected(end));
     evidence.MaxDiffPressureSafe = double(out.maxDiffPressure_psi(end) <= SCEN_CASE.maxDiffPressure_psi);
@@ -191,7 +191,7 @@ for scen_id = 1:4
 
     fprintf("\n--- Scenario Summary ---\n");
     fprintf("Scenario: %s\n", SCEN_CASE.name);
-    fprintf("TimeToCruise_sec: %.2f\n", evidence.TimeToCruise_sec);
+    fprintf("TimeToOutcome_sec: %.2f\n", evidence.TimeToOutcome_sec);
     fprintf("FinalState: %s\n", evidence.FinalState);
     fprintf("IsCruise: %d | TimeoutDetected: %d | MaxDiffPressureSafe: %d | SensorFaultDetected: %d | IsFaultState: %d\n\n", ...
         evidence.IsCruise, evidence.TimeoutDetected, evidence.MaxDiffPressureSafe, evidence.SensorFaultDetected, evidence.IsFaultState);
@@ -343,7 +343,7 @@ end
 
 function out = runSimulation(scen, SIM)
     N = SIM.N;
-    out.timeToCruise_sec = nan(N,1);
+    out.timeToOutcome_sec = nan(N,1);
     out.isCruise = false(N,1);
     out.TimeoutDetected = false(N,1);
     out.maxDiffPressure_psi = nan(N,1);
@@ -357,7 +357,7 @@ function out = runSimulation(scen, SIM)
     out.stateLog = [];
 
     for i = 1:N
-        [out.isCruise(i), out.timeToCruise_sec(i), out.TimeoutDetected(i), ...
+        [out.isCruise(i), out.timeToOutcome_sec(i), out.TimeoutDetected(i), ...
          out.maxDiffPressure_psi(i), timeLog, aircraftAltLog, cabinAltLog, ...
          diffPressureLog, stateLog, finalState] = simulateOneRun(scen, SIM.dt, SIM.maxTime_sec);
 
@@ -574,7 +574,7 @@ function V = verifyRequirements(REQ, evidence, expectedPass, applicable)
 
         % Special handling for REQ-01 (must reach cruise AND within time)
         if REQ.ID(i) == "REQ-01"
-            ActualPass(i) = (evidence.TimeToCruise_sec <= thr) && (evidence.IsCruise == 1);
+            ActualPass(i) = (evidence.TimeToOutcome_sec <= thr) && (evidence.IsCruise == 1);
         else
             switch op
                 case "<="
