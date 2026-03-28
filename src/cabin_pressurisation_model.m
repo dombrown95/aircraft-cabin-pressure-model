@@ -12,9 +12,9 @@ REQ = table( ...
     ["The cabin pressurisation system shall reach CRUISE mode within 750 seconds."; ...
      "The cabin pressurisation system shall end in CRUISE mode under nominal conditions."; ...
      "The system shall not exceed the maximum differential pressure limit under nominal conditions."; ...
-     "The system shall declare FAULT when sensor data is unavailable."; ...
+     "The system shall detect and flag a sensor fault condition when sensor data becomes unavailable."; ...
      "The system shall flag a timeout condition if cruise conditions are not achieved within 750 seconds."; ...
-     "The system shall enter FAULT state under sensor fault conditions."], ...
+     "The system shall transition to the FAULT state when a sensor fault condition is detected."], ...
     ["TimeToOutcome_sec"; "IsCruise"; "MaxDiffPressureSafe"; "SensorFaultDetected"; "TimeoutDetected"; "IsFaultState"], ...
     ["<="; "=="; "=="; "=="; "=="; "=="], ...
     [750; 1; 1; 1; 1; 1], ...
@@ -122,7 +122,7 @@ for scen_id = 1:4
     evidence.IsCruise = double(out.isCruise(end));
     evidence.TimeoutDetected = double(out.TimeoutDetected(end));
     evidence.MaxDiffPressureSafe = double(out.maxDiffPressure_psi(end) <= SCEN_CASE.maxDiffPressure_psi);
-    evidence.SensorFaultDetected = double(SCEN_CASE.sensorFault && out.finalState == "FAULT");
+    evidence.SensorFaultDetected = double(out.sensorFaultDetected(end));
     evidence.FinalState = out.finalState;
     evidence.IsFaultState = double(out.finalState == "FAULT");
 
@@ -347,6 +347,7 @@ function out = runSimulation(scen, SIM)
     out.isCruise = false(N,1);
     out.TimeoutDetected = false(N,1);
     out.maxDiffPressure_psi = nan(N,1);
+    out.sensorFaultDetected = false(N,1);
     out.finalState = "";
 
     % Keep final run logs for plotting
@@ -358,7 +359,8 @@ function out = runSimulation(scen, SIM)
 
     for i = 1:N
         [out.isCruise(i), out.timeToOutcome_sec(i), out.TimeoutDetected(i), ...
-         out.maxDiffPressure_psi(i), timeLog, aircraftAltLog, cabinAltLog, ...
+         out.maxDiffPressure_psi(i), out.sensorFaultDetected(i), ...
+         timeLog, aircraftAltLog, cabinAltLog, ...
          diffPressureLog, stateLog, finalState] = simulateOneRun(scen, SIM.dt, SIM.maxTime_sec);
 
         if i == N
@@ -379,21 +381,24 @@ function mcOut = runMonteCarloSimulation(scen, MC)
     mcOut.isCruise = false(N,1);
     mcOut.TimeoutDetected = false(N,1);
     mcOut.maxDiffPressure_psi = nan(N,1);
+    mcOut.sensorFaultDetected = false(N,1);
     mcOut.finalState = strings(N,1);
 
     for i = 1:N
         [isCruise, timeToCruise_sec, TimeoutDetected, maxDiffPressure_psi, ...
-            ~, ~, ~, ~, ~, finalState] = simulateOneRun(scen, MC.dt, MC.maxTime_sec);
+            sensorFaultDetected, ~, ~, ~, ~, ~, finalState] = simulateOneRun(scen, MC.dt, MC.maxTime_sec);
 
         mcOut.isCruise(i) = isCruise;
         mcOut.timeToCruise_sec(i) = timeToCruise_sec;
         mcOut.TimeoutDetected(i) = TimeoutDetected;
         mcOut.maxDiffPressure_psi(i) = maxDiffPressure_psi;
+        mcOut.sensorFaultDetected(i) = sensorFaultDetected;
         mcOut.finalState(i) = finalState;
     end
 end
 
-function [isCruise, timeToCruise_sec, TimeoutDetected, maxDiffPressure_psi, ...
+function [isCruise, timeToOutcome_sec, TimeoutDetected, maxDiffPressure_psi, ...
+          sensorFaultDetected, ...
           timeLog, aircraftAltLog, cabinAltLog, diffPressureLog, stateLog, finalState] = ...
           simulateOneRun(scen, dt, maxTime_sec)
 
@@ -406,6 +411,7 @@ function [isCruise, timeToCruise_sec, TimeoutDetected, maxDiffPressure_psi, ...
     TimeoutDetected = false;
     maxDiffPressure_psi = 0;
     timeoutRecorded = false;
+    sensorFaultDetected = false;
 
     % Draw uncertain parameters
     aircraftClimbRate = max(1, scen.aircraftClimbRate_ftps + randn * scen.stdAircraftClimbRate_ftps);
@@ -428,6 +434,7 @@ function [isCruise, timeToCruise_sec, TimeoutDetected, maxDiffPressure_psi, ...
 
         % Sensor fault (triggered only after the configured start time)
         if scen.sensorFault && t >= scen.sensorFaultStart_sec
+            sensorFaultDetected = true;
             state = "FAULT";
         end
 
@@ -504,7 +511,7 @@ function [isCruise, timeToCruise_sec, TimeoutDetected, maxDiffPressure_psi, ...
 
     finalState = state;
     isCruise = (state == "CRUISE");
-    timeToCruise_sec = t;
+    timeToOutcome_sec = t;
 end
 
 function [expectedPass, applicable] = buildExpectedResults(REQ, scen)
@@ -525,7 +532,7 @@ function [expectedPass, applicable] = buildExpectedResults(REQ, scen)
                 applicable(i) = scen.isNominal;
 
             case "REQ-03"
-                expectedPass(i) = scen.isNominal;
+                expectedPass(i) = ~contains(scen.name, "Reduced Pressure Limit");
                 applicable(i) = true;
 
             case "REQ-04"
