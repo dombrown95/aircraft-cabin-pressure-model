@@ -313,7 +313,7 @@ if MC.enabled
 
     xlabel('Time to Cruise / Termination (sec)');
     ylabel('Probability Density');
-    title('Monte Carlo Time-to-Cruise Distribution');
+    title('Monte Carlo Time-to-Cruise Distribution (Including Failed Runs)');
 
     legendHandles = [plotHandles; hMean];
     legendEntries = [legendEntries; "Mean time (dotted lines)"];
