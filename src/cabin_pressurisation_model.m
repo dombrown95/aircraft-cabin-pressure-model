@@ -230,6 +230,22 @@ if MC.enabled
     plotHandles = gobjects(numel(MC_SCEN), 1);
     legendEntries = strings(numel(MC_SCEN), 1);
 
+    xlim([600 850]);
+    ylim([0 0.026]);
+
+    % Pass/fail shading
+    patch([600 750 750 600], [0 0 0.026 0.026], ...
+          [0.85 1.00 0.85], ...
+          'FaceAlpha', 0.12, ...
+          'EdgeColor', 'none', ...
+          'HandleVisibility', 'off');
+
+    patch([750 850 850 750], [0 0 0.026 0.026], ...
+          [1.00 0.85 0.85], ...
+          'FaceAlpha', 0.12, ...
+          'EdgeColor', 'none', ...
+          'HandleVisibility', 'off');
+
     for k = 1:numel(MC_SCEN)
         scenMC = SCEN;
         scenMC.name = MC_SCEN(k).name;
@@ -267,7 +283,6 @@ if MC.enabled
         mcSummary.TimeoutRate_percent(k) = timeoutRate;
         mcSummary.PressureFaultRate_percent(k) = pressureFaultRate;
 
-        % Smoothed probability density plot
         validTimes = mcOut.timeToCruise_sec(~isnan(mcOut.timeToCruise_sec));
 
         if numel(validTimes) > 1
@@ -277,9 +292,19 @@ if MC.enabled
             plotHandles(k) = plot(validTimes, 0, '.', 'MarkerSize', 12);
         end
 
-        legendEntries(k) = MC_SCEN(k).name;
+        % Mean time line for scenario
+        xline(meanTime, ':', ...
+            'Color', plotHandles(k).Color, ...
+            'LineWidth', 1.5, ...
+            'HandleVisibility', 'off');
+
+        legendEntries(k) = sprintf('%s (%.1f%% pass)', MC_SCEN(k).name, passRate);
     end
 
+    % Legend entry for dotted mean lines
+    hMean = plot(nan, nan, ':k', 'LineWidth', 1.5);
+
+    % Requirement threshold line
     xline(750, '--', 'Requirement Threshold', ...
         'Color', [1 0.2 0.2], ...
         'LineWidth', 2, ...
@@ -289,8 +314,13 @@ if MC.enabled
     xlabel('Time to Cruise / Termination (sec)');
     ylabel('Probability Density');
     title('Monte Carlo Time-to-Cruise Distribution');
-    legend(plotHandles, legendEntries, 'Location', 'northeast');
+
+    legendHandles = [plotHandles; hMean];
+    legendEntries = [legendEntries; "Mean time (dotted lines)"];
+    legend(legendHandles, legendEntries, 'Location', 'northeast');
+
     xlim([600 850]);
+    ylim([0 0.026]);
     grid on;
     hold off;
 
