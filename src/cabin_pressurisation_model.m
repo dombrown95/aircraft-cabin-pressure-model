@@ -15,7 +15,7 @@ REQ = table( ...
      "The system shall declare FAULT when sensor data is unavailable."; ...
      "The system shall flag a timeout condition if cruise conditions are not achieved within 750 seconds."; ...
      "The system shall enter FAULT state under sensor fault conditions."], ...
-    ["TimeToCruise_sec"; "IsCruise"; "MaxDiffPressureSafe"; "SensorFaultDetected"; "FaultOnTimeout"; "IsFaultState"], ...
+    ["TimeToCruise_sec"; "IsCruise"; "MaxDiffPressureSafe"; "SensorFaultDetected"; "TimeoutDetected"; "IsFaultState"], ...
     ["<="; "=="; "=="; "=="; "=="; "=="], ...
     [750; 1; 1; 1; 1; 1], ...
     ["SingleRun"; "SingleRun"; "SingleRun"; "SingleRun"; "SingleRun"; "SingleRun"], ...
@@ -43,7 +43,7 @@ SCEN.pressurisationStartDelay_sec = 0;   % delay for delayed system response sce
 SCEN.maxDiffPressure_psi = 8.5;          % maximum allowable differential pressure
 SCEN.psiPerFt = 0.00025;                 % simplified conversion from altitude difference to psi
 SCEN.timeout_sec = 750;                  % timeout requirement for reaching cruise mode
-SCEN.faultOnTimeoutEnabled = false;      
+SCEN.TimeoutDetectedEnabled = false;      
 
 % Variability controls (deterministic)
 SCEN.stdAircraftClimbRate_ftps = 0.0;
@@ -79,7 +79,7 @@ for scen_id = 1:4
 
     SCEN_CASE = SCEN;
     SCEN_CASE.id = scen_id;
-    SCEN_CASE.faultOnTimeoutEnabled = false;   % scenario plots do not go to FAULT on timeout
+    SCEN_CASE.TimeoutDetectedEnabled = false;   % scenario plots do not go to FAULT on timeout
 
     switch scen_id
         case 1
@@ -120,7 +120,7 @@ for scen_id = 1:4
     evidence = struct();
     evidence.TimeToCruise_sec = out.timeToCruise_sec(end);
     evidence.IsCruise = double(out.isCruise(end));
-    evidence.FaultOnTimeout = double(out.faultOnTimeout(end));
+    evidence.TimeoutDetected = double(out.TimeoutDetected(end));
     evidence.MaxDiffPressureSafe = double(out.maxDiffPressure_psi(end) <= SCEN_CASE.maxDiffPressure_psi);
     evidence.SensorFaultDetected = double(SCEN_CASE.sensorFault && out.finalState == "FAULT");
     evidence.FinalState = out.finalState;
@@ -193,8 +193,8 @@ for scen_id = 1:4
     fprintf("Scenario: %s\n", SCEN_CASE.name);
     fprintf("TimeToCruise_sec: %.2f\n", evidence.TimeToCruise_sec);
     fprintf("FinalState: %s\n", evidence.FinalState);
-    fprintf("IsCruise: %d | FaultOnTimeout: %d | MaxDiffPressureSafe: %d | SensorFaultDetected: %d | IsFaultState: %d\n\n", ...
-        evidence.IsCruise, evidence.FaultOnTimeout, evidence.MaxDiffPressureSafe, evidence.SensorFaultDetected, evidence.IsFaultState);
+    fprintf("IsCruise: %d | TimeoutDetected: %d | MaxDiffPressureSafe: %d | SensorFaultDetected: %d | IsFaultState: %d\n\n", ...
+        evidence.IsCruise, evidence.TimeoutDetected, evidence.MaxDiffPressureSafe, evidence.SensorFaultDetected, evidence.IsFaultState);
 
     % Auto-generated scenario conclusion
     conclusionText = generateScenarioConclusion(SCEN_CASE, evidence, V);
@@ -262,7 +262,7 @@ if MC.enabled
         scenMC.sensorFault = false;
         scenMC.sensorFaultStart_sec = inf;
         scenMC.isNominal = false;
-        scenMC.faultOnTimeoutEnabled = false;  % keep Monte Carlo unchanged
+        scenMC.TimeoutDetectedEnabled = false;  % keep Monte Carlo unchanged
 
         scenMC.cabinClimbRate_ftps = MC_SCEN(k).cabinClimbRate_ftps;
         scenMC.maxDiffPressure_psi = MC_SCEN(k).maxDiffPressure_psi;
@@ -282,7 +282,7 @@ if MC.enabled
         meanTime = mean(mcOut.timeToCruise_sec, 'omitnan');
         passRate = 100 * mean(req1Pass);
         cruiseRate = 100 * mean(mcOut.isCruise);
-        timeoutRate = 100 * mean(mcOut.faultOnTimeout);
+        timeoutRate = 100 * mean(mcOut.TimeoutDetected);
 
         mcSummary.Scenario(k) = MC_SCEN(k).name;
         mcSummary.MeanTimeToCruise_sec(k) = meanTime;
@@ -336,7 +336,7 @@ if MC.enabled
     disp("==========================================================");
     disp(mcSummary);
 
-    disp("Note: The Monte Carlo plot shows all runs, including successful cruise outcomes and failed terminations. Pass rate indicates the percentage of runs that reached CRUISE within 750 seconds.");
+    disp("Note: The Monte Carlo plot shows all runs, including successful cruise outcomes and runs that exceeded the 750 second requirement. Pass rate indicates the percentage of runs that reached CRUISE within 750 seconds.");
 end
 
 %% ==========================================================
@@ -347,7 +347,7 @@ function out = runSimulation(scen, SIM)
     N = SIM.N;
     out.timeToCruise_sec = nan(N,1);
     out.isCruise = false(N,1);
-    out.faultOnTimeout = false(N,1);
+    out.TimeoutDetected = false(N,1);
     out.maxDiffPressure_psi = nan(N,1);
     out.finalState = "";
 
@@ -359,7 +359,7 @@ function out = runSimulation(scen, SIM)
     out.stateLog = [];
 
     for i = 1:N
-        [out.isCruise(i), out.timeToCruise_sec(i), out.faultOnTimeout(i), ...
+        [out.isCruise(i), out.timeToCruise_sec(i), out.TimeoutDetected(i), ...
          out.maxDiffPressure_psi(i), timeLog, aircraftAltLog, cabinAltLog, ...
          diffPressureLog, stateLog, finalState] = simulateOneRun(scen, SIM.dt, SIM.maxTime_sec);
 
@@ -379,23 +379,23 @@ function mcOut = runMonteCarloSimulation(scen, MC)
 
     mcOut.timeToCruise_sec = nan(N,1);
     mcOut.isCruise = false(N,1);
-    mcOut.faultOnTimeout = false(N,1);
+    mcOut.TimeoutDetected = false(N,1);
     mcOut.maxDiffPressure_psi = nan(N,1);
     mcOut.finalState = strings(N,1);
 
     for i = 1:N
-        [isCruise, timeToCruise_sec, faultOnTimeout, maxDiffPressure_psi, ...
+        [isCruise, timeToCruise_sec, TimeoutDetected, maxDiffPressure_psi, ...
             ~, ~, ~, ~, ~, finalState] = simulateOneRun(scen, MC.dt, MC.maxTime_sec);
 
         mcOut.isCruise(i) = isCruise;
         mcOut.timeToCruise_sec(i) = timeToCruise_sec;
-        mcOut.faultOnTimeout(i) = faultOnTimeout;
+        mcOut.TimeoutDetected(i) = TimeoutDetected;
         mcOut.maxDiffPressure_psi(i) = maxDiffPressure_psi;
         mcOut.finalState(i) = finalState;
     end
 end
 
-function [isCruise, timeToCruise_sec, faultOnTimeout, maxDiffPressure_psi, ...
+function [isCruise, timeToCruise_sec, TimeoutDetected, maxDiffPressure_psi, ...
           timeLog, aircraftAltLog, cabinAltLog, diffPressureLog, stateLog, finalState] = ...
           simulateOneRun(scen, dt, maxTime_sec)
 
@@ -405,7 +405,7 @@ function [isCruise, timeToCruise_sec, faultOnTimeout, maxDiffPressure_psi, ...
     aircraftAlt_ft = 0;
     cabinAlt_ft = scen.initialCabinAlt_ft;
 
-    faultOnTimeout = false;
+    TimeoutDetected = false;
     maxDiffPressure_psi = 0;
     timeoutRecorded = false;
 
@@ -468,10 +468,10 @@ function [isCruise, timeToCruise_sec, faultOnTimeout, maxDiffPressure_psi, ...
 
                 % Timeout condition
                 if t >= scen.timeout_sec && ~timeoutRecorded && state ~= "CRUISE"
-                    faultOnTimeout = true;
+                    TimeoutDetected = true;
                     timeoutRecorded = true;
 
-                    if isfield(scen, 'faultOnTimeoutEnabled') && scen.faultOnTimeoutEnabled
+                    if isfield(scen, 'TimeoutDetectedEnabled') && scen.TimeoutDetectedEnabled
                         state = "FAULT";
                     end
                 end
@@ -623,7 +623,7 @@ function conclusionText = generateScenarioConclusion(scen, evidence, V)
     nNotApplicable = sum(V.Outcome == "NOT_APPLICABLE");
 
     if scen.isNominal
-        if evidence.IsCruise == 1 && evidence.FaultOnTimeout == 0 && evidence.MaxDiffPressureSafe == 1
+        if evidence.IsCruise == 1 && evidence.TimeoutDetected == 0 && evidence.MaxDiffPressureSafe == 1
             conclusionText = "Nominal scenario passed all key applicable requirements and reached CRUISE state within the required time.";
         else
             conclusionText = "Nominal scenario did not satisfy all key applicable requirements.";
@@ -637,7 +637,7 @@ function conclusionText = generateScenarioConclusion(scen, evidence, V)
         end
 
     elseif contains(scen.name, "Slow Cabin Response")
-        if evidence.FaultOnTimeout == 1
+        if evidence.TimeoutDetected == 1
             conclusionText = "Slow cabin response scenario triggered timeout protection as expected.";
         else
             conclusionText = "Slow cabin response scenario did not trigger expected timeout behaviour.";
